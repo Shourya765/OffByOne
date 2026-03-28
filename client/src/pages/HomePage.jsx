@@ -26,7 +26,10 @@ export function HomePage() {
     label: "San Francisco",
     source: "default",
   });
-  /** Skip IP bootstrap if the user already picked country, GPS, or IP manually. */
+  /**
+   * When true, automatic GPS/IP on load must not overwrite state (user already changed region).
+   * Buttons "My location" / "Use IP" set this before refreshing coordinates.
+   */
   const userTouchedLocationRef = useRef(false);
   /** Empty string = all cities in selected country */
   const [city, setCity] = useState("");
@@ -87,13 +90,62 @@ export function HomePage() {
     fetchEvents();
   }, [fetchEvents]);
 
-  /** Server IP geolocation only — no browser geolocation permission. */
+  /** Apply GPS coords + nearest demo city (shared by auto-load and the GPS button). */
+  const applyGpsCoordinates = useCallback(async (la, lo, guard) => {
+    try {
+      const { nearest } = await api.nearestCity(la, lo);
+      if (guard?.()) return;
+      if (!nearest) {
+        setLoc({
+          lat: la,
+          lng: lo,
+          label: "Your location",
+          source: "gps",
+          gpsCity: undefined,
+          gpsCountry: undefined,
+          gpsDistanceKm: undefined,
+        });
+        setLocStatus("GPS ready — map routes use your position.");
+        return;
+      }
+      setCountry(nearest.countryCode);
+      setCity(nearest.city);
+      setLoc({
+        lat: la,
+        lng: lo,
+        label: nearest.city,
+        source: "gps",
+        gpsCity: nearest.city,
+        gpsCountry: nearest.countryCode,
+        gpsDistanceKm: nearest.distanceKm,
+      });
+      setLocStatus(
+        `GPS ready — nearest demo city is ${nearest.city}. Browse other cities below; driving routes always start from your position.`
+      );
+    } catch {
+      if (guard?.()) return;
+      setLoc({
+        lat: la,
+        lng: lo,
+        label: "Your location",
+        source: "gps",
+        gpsCity: undefined,
+        gpsCountry: undefined,
+        gpsDistanceKm: undefined,
+      });
+      setLocStatus("GPS ready — could not resolve nearest demo city.");
+    }
+  }, []);
+
+  /** On every visit: ask for GPS first so map routes have your position; fall back to server IP. */
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    const guard = () => cancelled || userTouchedLocationRef.current;
+
+    const tryIpFallback = async () => {
       try {
         const data = await api.geolocate();
-        if (cancelled || userTouchedLocationRef.current) return;
+        if (guard()) return;
         setLoc({
           lat: data.lat,
           lng: data.lng,
@@ -106,39 +158,52 @@ export function HomePage() {
         if (data.countryCode) setCountry(data.countryCode);
         if (data.city) setCity(data.city);
         setLocStatus(
-          "Approximate area from your connection (server IP lookup — the browser does not ask for GPS). Use “My location” only when you want precise GPS."
+          "Using approximate location from IP (GPS unavailable or denied). Driving routes still start from this point."
         );
       } catch {
-        if (!cancelled && !userTouchedLocationRef.current) {
-          setLocStatus('Using default map area. Try “Use IP location” or “My location (GPS)”.');
+        if (!guard()) {
+          setLocStatus("Could not detect location — using default map. Try the buttons above.");
         }
       }
-    })();
+    };
+
+    if (!navigator.geolocation) {
+      void tryIpFallback();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        void applyGpsCoordinates(pos.coords.latitude, pos.coords.longitude, guard);
+      },
+      () => {
+        if (!guard()) void tryIpFallback();
+      },
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 }
+    );
+
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applyGpsCoordinates]);
 
-  const applyRegionFromSelectors = useCallback(async (nextCountry, nextCity) => {
-    try {
-      const hint = await api.regionCenter(nextCountry, nextCity || "");
-      setLoc({
-        lat: hint.lat,
-        lng: hint.lng,
-        label: nextCity ? `${nextCity}, ${nextCountry}` : `All cities · ${nextCountry}`,
-        source: "manual",
-        gpsCity: undefined,
-        gpsCountry: undefined,
-        gpsDistanceKm: undefined,
-      });
-      setLocStatus(
-        nextCity
-          ? `Map pin set to ${nextCity} (catalog center) — road routes use this point.`
-          : `Map pin set to ${nextCountry} (catalog average) — road routes use this point.`
-      );
-    } catch {
-      setLocStatus("Could not resolve a map point for this region — try another country.");
-    }
+  /** Update which city/country we *browse* — keep your real lat/lng for map routes & directions API. */
+  const setManualRegionLabel = useCallback((nextCountry, nextCity) => {
+    setLoc((prev) => ({
+      ...prev,
+      source: "manual",
+      label: nextCity ? `${nextCity}, ${nextCountry}` : `All cities · ${nextCountry}`,
+      gpsCity: undefined,
+      gpsCountry: undefined,
+      gpsDistanceKm: undefined,
+    }));
+    setLocStatus(
+      nextCity
+        ? `Showing events in ${nextCity}. Driving routes on the map still start from your saved position (GPS or IP).`
+        : `Showing all cities in ${nextCountry}. Routes still start from your position.`
+    );
   }, []);
 
   useEffect(() => {
@@ -167,49 +232,13 @@ export function HomePage() {
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const la = pos.coords.latitude;
-        const lo = pos.coords.longitude;
-        try {
-          const { nearest } = await api.nearestCity(la, lo);
-          if (!nearest) {
-            setLoc({
-              lat: la,
-              lng: lo,
-              label: "Your location",
-              source: "gps",
-            });
-            setLocStatus("No matching demo city — widen country or use manual search.");
-            return;
-          }
-          setCountry(nearest.countryCode);
-          setCity(nearest.city);
-          setLoc({
-            lat: la,
-            lng: lo,
-            label: nearest.city,
-            source: "gps",
-            gpsCity: nearest.city,
-            gpsCountry: nearest.countryCode,
-            gpsDistanceKm: nearest.distanceKm,
-          });
-          setLocStatus(
-            `Showing events in ${nearest.city} only (nearest city in demo data, ~${nearest.distanceKm} km to city center).`
-          );
-        } catch {
-          setLoc({
-            lat: la,
-            lng: lo,
-            label: "Your location",
-            source: "gps",
-          });
-          setLocStatus("Could not resolve nearest city — try again.");
-        }
+      (pos) => {
+        void applyGpsCoordinates(pos.coords.latitude, pos.coords.longitude);
       },
       () => {
-        setLocStatus("GPS denied — try IP or manual");
+        setLocStatus("GPS denied — try “Use IP location”.");
       },
-      { enableHighAccuracy: true, timeout: 12000 }
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 }
     );
   };
 
@@ -237,7 +266,7 @@ export function HomePage() {
 
   const applyManualRegion = () => {
     userTouchedLocationRef.current = true;
-    void applyRegionFromSelectors(country, city);
+    setManualRegionLabel(country, city);
   };
 
   useEffect(() => {
@@ -329,7 +358,9 @@ export function HomePage() {
           Search near you or explore a country. Filter by interests, date, distance, and price — list or map.
         </p>
         <p className="mt-4 max-w-2xl text-xs text-slate-500 dark:text-slate-400">
-          The site does not request GPS on load. We guess your area from the server (IP) first so map routes always have a starting point; the browser permission prompt appears only if you tap “My location”.
+          On each visit we ask the browser for your location (you can allow or deny). If GPS is unavailable, we use your
+          IP via the server. That position is sent to the API when you draw a driving route so paths run from you to
+          events — even when you filter another city.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <button
@@ -386,7 +417,7 @@ export function HomePage() {
                     const next = e.target.value;
                     setCountry(next);
                     setCity("");
-                    void applyRegionFromSelectors(next, "");
+                    setManualRegionLabel(next, "");
                   }}
                   className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                 >
@@ -405,7 +436,7 @@ export function HomePage() {
                     userTouchedLocationRef.current = true;
                     const v = e.target.value;
                     setCity(v);
-                    void applyRegionFromSelectors(country, v);
+                    setManualRegionLabel(country, v);
                   }}
                   className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                 >
