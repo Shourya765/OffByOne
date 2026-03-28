@@ -1,0 +1,469 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useNavigate } from "react-router-dom";
+import { api } from "../api/client.js";
+import { useAuth } from "../context/AuthContext.jsx";
+import { EventCard } from "../components/EventCard.jsx";
+import { EventsMap } from "../components/EventsMap.jsx";
+import { INTERESTS } from "../lib/utils.js";
+
+const COUNTRIES = [
+  { code: "US", name: "United States" },
+  { code: "GB", name: "United Kingdom" },
+  { code: "CA", name: "Canada" },
+  { code: "AU", name: "Australia" },
+  { code: "DE", name: "Germany" },
+  { code: "FR", name: "France" },
+];
+
+export function HomePage() {
+  const navigate = useNavigate();
+  const { user, setInterests } = useAuth();
+  const [loc, setLoc] = useState({ lat: 37.7749, lng: -122.4194, label: "San Francisco", source: "default" });
+  const [city, setCity] = useState("San Francisco");
+  const [country, setCountry] = useState("US");
+  const [radiusKm, setRadiusKm] = useState(50);
+  const [keyword, setKeyword] = useState("");
+  const [datePreset, setDatePreset] = useState("");
+  const [priceFilter, setPriceFilter] = useState("");
+  const [selectedCategories, setSelectedCategories] = useState([]);
+  const [mode, setMode] = useState("list");
+  const [events, setEvents] = useState([]);
+  const [trending, setTrending] = useState([]);
+  const [reco, setReco] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [source, setSource] = useState("");
+  const [locStatus, setLocStatus] = useState("");
+  const [notifEnabled, setNotifEnabled] = useState(false);
+
+  const toggleCategory = (c) => {
+    setSelectedCategories((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
+  };
+
+  const fetchEvents = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { events: list, source: src } = await api.searchEvents({
+        lat: loc.lat,
+        lng: loc.lng,
+        radiusKm,
+        q: keyword,
+        date: datePreset,
+        price: priceFilter,
+        categories: selectedCategories.length ? selectedCategories.join(",") : undefined,
+        country: loc.lat && loc.lng ? undefined : country,
+        city: loc.lat && loc.lng ? undefined : city || undefined,
+      });
+      setEvents(list);
+      setSource(src);
+    } catch (e) {
+      console.error(e);
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [loc, radiusKm, keyword, datePreset, priceFilter, selectedCategories, country, city]);
+
+  useEffect(() => {
+    fetchEvents();
+  }, [fetchEvents]);
+
+  useEffect(() => {
+    api
+      .trending(loc.lat, loc.lng)
+      .then((r) => setTrending(r.events || []))
+      .catch(() => setTrending([]));
+  }, [loc.lat, loc.lng]);
+
+  useEffect(() => {
+    if (!user) {
+      setReco([]);
+      return;
+    }
+    api
+      .recommendations(loc.lat, loc.lng)
+      .then((r) => setReco(r.events || []))
+      .catch(() => setReco([]));
+  }, [user, loc.lat, loc.lng, user?.interests]);
+
+  const useGps = () => {
+    setLocStatus("Locating…");
+    if (!navigator.geolocation) {
+      setLocStatus("GPS not available");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLoc({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          label: "Your location",
+          source: "gps",
+        });
+        setLocStatus("Using device location");
+      },
+      () => {
+        setLocStatus("GPS denied — try IP or manual");
+      },
+      { enableHighAccuracy: true, timeout: 12000 }
+    );
+  };
+
+  const useIp = async () => {
+    setLocStatus("Looking up IP…");
+    try {
+      const data = await api.geolocate();
+      setLoc({
+        lat: data.lat,
+        lng: data.lng,
+        label: data.label || data.city,
+        source: "ip",
+      });
+      if (data.city) setCity(data.city);
+      if (data.countryCode) setCountry(data.countryCode);
+      setLocStatus("Approximate location from IP");
+    } catch {
+      setLocStatus("IP lookup failed");
+    }
+  };
+
+  const applyManualRegion = () => {
+    setLoc({
+      lat: null,
+      lng: null,
+      label: `${city || "Region"}, ${country}`,
+      source: "manual",
+    });
+    setLocStatus("Searching by city / country");
+  };
+
+  const surprise = () => {
+    if (!events.length) return;
+    const pick = events[Math.floor(Math.random() * events.length)];
+    navigate(`/event/${pick.id}`);
+  };
+
+  const syncInterestsToAccount = async () => {
+    if (!user) {
+      navigate("/auth");
+      return;
+    }
+    try {
+      await setInterests(selectedCategories.length ? selectedCategories : INTERESTS.slice(0, 3));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const enableNotifications = async () => {
+    if (!("Notification" in window)) return;
+    const perm = await Notification.requestPermission();
+    setNotifEnabled(perm === "granted");
+  };
+
+  useEffect(() => {
+    if (!notifEnabled || !user) return;
+    const id = setInterval(async () => {
+      try {
+        const { upcoming } = await api.notificationsPreview();
+        for (const u of upcoming || []) {
+          if (Notification.permission === "granted") {
+            // eslint-disable-next-line no-new
+            new Notification("Upcoming saved event", { body: u.name });
+          }
+        }
+        if (upcoming?.length) {
+          await api.markNotificationsSent(upcoming.map((x) => x.id));
+        }
+      } catch {
+        /* ignore */
+      }
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [notifEnabled, user]);
+
+  const mapCenter = useMemo(() => {
+    if (loc.lat != null && loc.lng != null) return [loc.lat, loc.lng];
+    const first = events.find((e) => e.lat != null && e.lng != null);
+    if (first) return [first.lat, first.lng];
+    return [37.7749, -122.4194];
+  }, [loc.lat, loc.lng, events]);
+
+  return (
+    <div className="space-y-10">
+      <motion.section
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="rounded-3xl border border-slate-200/80 bg-gradient-to-br from-brand-50 via-white to-violet-50 p-6 shadow-soft dark:border-slate-800 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 dark:shadow-soft-dark sm:p-8"
+      >
+        <h1 className="font-display text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
+          Discover events you’ll love
+        </h1>
+        <p className="mt-2 max-w-2xl text-slate-600 dark:text-slate-400">
+          Search near you or explore a country. Filter by interests, date, distance, and price — list or map.
+        </p>
+        <div className="mt-6 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={useGps}
+            className="rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-brand-700"
+          >
+            Use my location (GPS)
+          </button>
+          <button
+            type="button"
+            onClick={useIp}
+            className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+          >
+            Use IP location
+          </button>
+          <button
+            type="button"
+            onClick={surprise}
+            className="rounded-xl border border-violet-300 bg-violet-50 px-4 py-2.5 text-sm font-semibold text-violet-900 hover:bg-violet-100 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200"
+          >
+            Surprise me
+          </button>
+          {user && (
+            <button
+              type="button"
+              onClick={enableNotifications}
+              className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200"
+            >
+              {notifEnabled ? "Notifications on" : "Enable reminders"}
+            </button>
+          )}
+        </div>
+        {locStatus && <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">{locStatus}</p>}
+      </motion.section>
+
+      <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <h2 className="font-display text-lg font-semibold text-slate-900 dark:text-white">Location & radius</h2>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                City
+                <input
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                  placeholder="e.g. Austin"
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                Country
+                <select
+                  value={country}
+                  onChange={(e) => setCountry(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                >
+                  {COUNTRIES.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <button
+              type="button"
+              onClick={applyManualRegion}
+              className="mt-3 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 dark:bg-brand-600 dark:hover:bg-brand-500"
+            >
+              Search this city / country
+            </button>
+            <div className="mt-6">
+              <label className="flex items-center justify-between text-sm font-medium text-slate-700 dark:text-slate-300">
+                Radius
+                <span className="text-brand-600 dark:text-brand-400">{radiusKm} km</span>
+              </label>
+              <input
+                type="range"
+                min={5}
+                max={200}
+                step={5}
+                value={radiusKm}
+                onChange={(e) => setRadiusKm(Number(e.target.value))}
+                className="mt-2 w-full accent-brand-600"
+              />
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              Active: <strong>{loc.label}</strong>
+              {loc.lat != null && ` · ${loc.lat.toFixed(3)}, ${loc.lng.toFixed(3)}`}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <h2 className="font-display text-lg font-semibold text-slate-900 dark:text-white">Interests</h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Filter results and tune recommendations when signed in.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {INTERESTS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => toggleCategory(c)}
+                  className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
+                    selectedCategories.includes(c)
+                      ? "bg-brand-600 text-white"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  }`}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={syncInterestsToAccount}
+              className="mt-4 text-sm font-semibold text-brand-600 hover:underline dark:text-brand-400"
+            >
+              Save interests to account →
+            </button>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+              <label className="block flex-1 text-sm font-medium text-slate-700 dark:text-slate-300">
+                Keyword
+                <input
+                  value={keyword}
+                  onChange={(e) => setKeyword(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                  placeholder="Artist, venue, topic…"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={fetchEvents}
+                className="rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
+              >
+                Search
+              </button>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <select
+                value={datePreset}
+                onChange={(e) => setDatePreset(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+              >
+                <option value="">Any date</option>
+                <option value="today">Today</option>
+                <option value="week">This week</option>
+                <option value="month">This month</option>
+              </select>
+              <select
+                value={priceFilter}
+                onChange={(e) => setPriceFilter(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+              >
+                <option value="">Free & paid</option>
+                <option value="free">Free only</option>
+                <option value="paid">Paid only</option>
+              </select>
+              <div className="flex rounded-xl border border-slate-200 p-1 dark:border-slate-600">
+                <button
+                  type="button"
+                  onClick={() => setMode("list")}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                    mode === "list" ? "bg-slate-900 text-white dark:bg-brand-600" : "text-slate-600 dark:text-slate-300"
+                  }`}
+                >
+                  List
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("map")}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                    mode === "map" ? "bg-slate-900 text-white dark:bg-brand-600" : "text-slate-600 dark:text-slate-300"
+                  }`}
+                >
+                  Map
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <AnimatePresence mode="wait">
+            {mode === "map" ? (
+              <motion.div
+                key="map"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <EventsMap events={events} center={mapCenter} />
+              </motion.div>
+            ) : (
+              <motion.div key="list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-sm text-slate-500">
+                    {loading ? "Loading…" : `${events.length} events`}
+                    {source && (
+                      <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs dark:bg-slate-800">
+                        {source}
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div className="grid gap-5 sm:grid-cols-2">
+                  {events.map((ev, i) => (
+                    <EventCard key={ev.id} event={ev} index={i} />
+                  ))}
+                </div>
+                {!loading && events.length === 0 && (
+                  <p className="py-12 text-center text-slate-500">No events match your filters. Try widening radius or clearing filters.</p>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <h3 className="font-display font-semibold text-slate-900 dark:text-white">Trending near you</h3>
+            <ul className="mt-3 space-y-2">
+              {trending.slice(0, 6).map((e) => (
+                <li key={e.id}>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/event/${e.id}`)}
+                    className="w-full rounded-lg px-2 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"
+                  >
+                    <span className="font-medium text-slate-900 dark:text-white">{e.name}</span>
+                    {e.trendingScore > 0 && (
+                      <span className="ml-2 text-xs text-amber-600 dark:text-amber-400">hot</span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+          {user && reco.length > 0 && (
+            <div className="rounded-2xl border border-violet-200 bg-violet-50/80 p-5 dark:border-violet-900 dark:bg-violet-950/30">
+              <h3 className="font-display font-semibold text-violet-900 dark:text-violet-200">For you</h3>
+              <p className="mt-1 text-xs text-violet-800/80 dark:text-violet-300/80">
+                Based on your interests and what you open.
+              </p>
+              <ul className="mt-3 space-y-2">
+                {reco.slice(0, 5).map((e) => (
+                  <li key={e.id}>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/event/${e.id}`)}
+                      className="w-full rounded-lg px-2 py-2 text-left text-sm hover:bg-violet-100/80 dark:hover:bg-violet-900/40"
+                    >
+                      {e.name}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </aside>
+      </div>
+    </div>
+  );
+}
