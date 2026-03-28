@@ -36,8 +36,13 @@ export function AuthProvider({ children }) {
     return data;
   };
 
-  const register = async (email, password, name) => {
-    const data = await api.register({ email, password, name });
+  const register = async (email, password, name, options = {}) => {
+    const data = await api.register({
+      email,
+      password,
+      name,
+      ...(options.asOrganizer ? { asOrganizer: true } : {}),
+    });
     localStorage.setItem("ef_token", data.token);
     setUser(data.user);
     return data;
@@ -54,8 +59,12 @@ export function AuthProvider({ children }) {
     return u;
   };
 
+  const registerOrganizer = (email, password, name) => register(email, password, name, { asOrganizer: true });
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, setInterests, refresh }}>
+    <AuthContext.Provider
+      value={{ user, loading, login, register, registerOrganizer, logout, setInterests, refresh }}
+    >
       {children}
     </AuthContext.Provider>
   );

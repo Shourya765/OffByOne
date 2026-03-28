@@ -9,6 +9,7 @@ const userSchema = new mongoose.Schema(
     favorites: [{ type: String }],
     categoryViews: { type: mongoose.Schema.Types.Mixed, default: {} },
     notifiedEventIds: [{ type: String }],
+    role: { type: String, enum: ["user", "organizer"], default: "user" },
   },
   { timestamps: true }
 );

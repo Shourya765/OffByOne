@@ -1,13 +1,13 @@
 import { Router } from "express";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { getSampleEventsWithDates } from "../data/sampleEvents.js";
+import { getCatalogEventsWithDates } from "../services/catalogEvents.js";
 
 const router = Router();
 
 const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
-function buildCatalogPayload() {
-  const events = getSampleEventsWithDates();
+async function buildCatalogPayload() {
+  const events = await getCatalogEventsWithDates();
   return events.map((e) => ({
     id: e.id,
     name: e.name,
@@ -35,7 +35,7 @@ router.post("/chat", async (req, res) => {
     });
   }
 
-  const catalog = buildCatalogPayload();
+  const catalog = await buildCatalogPayload();
   const catalogJson = JSON.stringify(catalog);
 
   const instructions = `You are the Event Finder assistant. Users only have the events in the CATALOG JSON (demo/sample data).

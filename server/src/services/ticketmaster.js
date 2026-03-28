@@ -1,5 +1,6 @@
 import fetch from "node-fetch";
 import { getSampleEventsWithDates } from "../data/sampleEvents.js";
+import { getCatalogEventsWithDates, getOrganizerEventById } from "./catalogEvents.js";
 
 const TM_BASE = "https://app.ticketmaster.com/discovery/v2";
 
@@ -84,8 +85,9 @@ function filterSampleEvents({
   city,
   countryCode,
   skipRadiusFilter = true,
+  eventList,
 }) {
-  let list = getSampleEventsWithDates();
+  let list = eventList || getSampleEventsWithDates();
   if (city) {
     const c = city.toLowerCase();
     list = list.filter((ev) => ev.city?.toLowerCase().includes(c) || c.includes(ev.city?.toLowerCase() || ""));
@@ -167,6 +169,7 @@ export async function searchEvents(params) {
   } = params;
 
   if (useSampleEvents()) {
+    const eventList = await getCatalogEventsWithDates();
     return {
       events: filterSampleEvents({
         lat,
@@ -178,6 +181,7 @@ export async function searchEvents(params) {
         priceFilter,
         city,
         countryCode,
+        eventList,
       }),
       source: "sample",
     };
@@ -223,6 +227,7 @@ export async function searchEvents(params) {
     if (!res.ok) {
       const text = await res.text();
       console.error("Ticketmaster error", res.status, text);
+      const eventList = await getCatalogEventsWithDates();
       return {
         events: filterSampleEvents({
           lat,
@@ -234,6 +239,7 @@ export async function searchEvents(params) {
           priceFilter,
           city,
           countryCode,
+          eventList,
         }),
         source: "sample",
       };
@@ -261,6 +267,7 @@ export async function searchEvents(params) {
     return { events, source: "ticketmaster" };
   } catch (err) {
     console.error(err);
+    const eventList = await getCatalogEventsWithDates();
     return {
       events: filterSampleEvents({
         lat,
@@ -272,6 +279,7 @@ export async function searchEvents(params) {
         priceFilter,
         city,
         countryCode,
+        eventList,
       }),
       source: "sample",
     };
@@ -279,6 +287,8 @@ export async function searchEvents(params) {
 }
 
 export async function getEventById(id) {
+  const fromOrg = await getOrganizerEventById(id);
+  if (fromOrg) return fromOrg;
   if (useSampleEvents() || id.startsWith("sample-")) {
     const found = getSampleEventsWithDates().find((e) => e.id === id);
     return found || null;

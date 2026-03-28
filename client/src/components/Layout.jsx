@@ -28,6 +28,9 @@ export function Layout({ children }) {
             <NavLink to="/assistant" className={navClass}>
               AI assistant
             </NavLink>
+            <NavLink to="/organizer" className={navClass}>
+              Organizers
+            </NavLink>
             {user && (
               <NavLink to="/favorites" className={navClass}>
                 Favorites
@@ -64,6 +67,9 @@ export function Layout({ children }) {
           </NavLink>
           <NavLink to="/assistant" className={({ isActive }) => `${navClass({ isActive })} min-w-[22%] flex-1 text-center`}>
             AI
+          </NavLink>
+          <NavLink to="/organizer" className={({ isActive }) => `${navClass({ isActive })} min-w-[22%] flex-1 text-center`}>
+            Org
           </NavLink>
           {user && (
             <NavLink to="/favorites" className={({ isActive }) => `${navClass({ isActive })} min-w-[22%] flex-1 text-center`}>

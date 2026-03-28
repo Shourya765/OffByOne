@@ -12,19 +12,21 @@ function signToken(userId) {
 
 router.post("/register", async (req, res) => {
   try {
-    const { email, password, name } = req.body;
+    const { email, password, name, asOrganizer } = req.body;
     if (!email || !password) {
       return res.status(400).json({ error: "Email and password required" });
     }
     const existing = await User.findOne({ email: String(email).toLowerCase() });
     if (existing) return res.status(409).json({ error: "Email already registered" });
     const passwordHash = await bcrypt.hash(password, 10);
+    const role = asOrganizer === true || asOrganizer === "true" ? "organizer" : "user";
     const user = await User.create({
       email: String(email).toLowerCase(),
       passwordHash,
       name: name || "",
       interests: [],
       favorites: [],
+      role,
     });
     const token = signToken(user._id.toString());
     res.status(201).json({
@@ -35,6 +37,7 @@ router.post("/register", async (req, res) => {
         name: user.name,
         interests: user.interests,
         favorites: user.favorites,
+        role: user.role,
       },
     });
   } catch (e) {
@@ -59,6 +62,7 @@ router.post("/login", async (req, res) => {
         name: user.name,
         interests: user.interests,
         favorites: user.favorites,
+        role: user.role || "user",
       },
     });
   } catch (e) {
@@ -77,6 +81,7 @@ router.get("/me", authRequired, async (req, res) => {
       name: user.name,
       interests: user.interests,
       favorites: user.favorites,
+      role: user.role || "user",
     },
   });
 });

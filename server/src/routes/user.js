@@ -22,6 +22,7 @@ router.patch("/interests", authRequired, async (req, res) => {
       name: user.name,
       interests: user.interests,
       favorites: user.favorites,
+      role: user.role || "user",
     },
   });
 });

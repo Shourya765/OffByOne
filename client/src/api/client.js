@@ -57,6 +57,9 @@ export const api = {
   register: (body) =>
     request("/auth/register", { method: "POST", body: JSON.stringify(body) }),
   login: (body) => request("/auth/login", { method: "POST", body: JSON.stringify(body) }),
+  organizerListEvents: () => request("/organizer/events"),
+  organizerCreateEvent: (body) =>
+    request("/organizer/events", { method: "POST", body: JSON.stringify(body) }),
   me: () => request("/auth/me"),
   updateInterests: (interests) =>
     request("/user/interests", { method: "PATCH", body: JSON.stringify({ interests }) }),

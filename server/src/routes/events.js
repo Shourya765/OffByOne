@@ -10,6 +10,7 @@ import {
   getCitiesForCountry,
   getNearestCatalogCity,
 } from "../data/sampleEvents.js";
+import { getCatalogEventsWithDates } from "../services/catalogEvents.js";
 
 const router = Router();
 
@@ -97,7 +98,7 @@ router.get("/trending", async (req, res) => {
   }
   const stats = await EventStat.find({ regionKey: rk }).sort({ views: -1 }).limit(12).lean();
   const ids = stats.map((s) => s.eventId);
-  const allSample = getSampleEventsWithDates();
+  const allSample = await getCatalogEventsWithDates();
   const byId = new Map(allSample.map((e) => [e.id, e]));
 
   const enriched = ids
