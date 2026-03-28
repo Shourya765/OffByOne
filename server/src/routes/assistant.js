@@ -4,21 +4,27 @@ import { getCatalogEventsWithDates } from "../services/catalogEvents.js";
 
 const router = Router();
 
+// Note: Ensure your .env uses a valid model name like 'gemini-1.5-flash'
 const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 async function buildCatalogPayload() {
-  const events = await getCatalogEventsWithDates();
-  return events.map((e) => ({
-    id: e.id,
-    name: e.name,
-    city: e.city,
-    country: e.countryCode,
-    category: e.category,
-    startDate: e.startDate,
-    venue: e.venue,
-    priceRange: e.priceRange,
-    description: (e.description || "").slice(0, 220),
-  }));
+  try {
+    const events = await getCatalogEventsWithDates();
+    return events.map((e) => ({
+      id: e.id,
+      name: e.name,
+      city: e.city,
+      country: e.countryCode,
+      category: e.category,
+      startDate: e.startDate,
+      venue: e.venue,
+      priceRange: e.priceRange,
+      description: (e.description || "").slice(0, 220),
+    }));
+  } catch (error) {
+    console.error("Error fetching catalog:", error);
+    return [];
+  }
 }
 
 router.post("/chat", async (req, res) => {
@@ -38,13 +44,14 @@ router.post("/chat", async (req, res) => {
   const catalog = await buildCatalogPayload();
   const catalogJson = JSON.stringify(catalog);
 
-  const instructions = `You are the Event Finder assistant. Users only have the events in the CATALOG JSON (demo/sample data).
+  // Clearer instructions for the AI
+  const instructions = `You are the Event Finder assistant. 
+Users only have access to events in the CATALOG JSON provided below.
 
 RULES:
-1. If the user's message is about events, concerts, festivals, venues, tickets, cities, dates, categories, recommendations, schedules, or anything clearly about finding or discussing these catalog events — set "eventRelated": true. Answer using ONLY the catalog. Mention event names, cities, categories, and dates when helpful. If nothing matches, say the catalog has no matching event and suggest broadening the question.
-2. For ANY question not about events or this catalog (e.g. programming, homework, unrelated trivia, personal advice unrelated to events) — set "eventRelated": false and set "reply" to exactly this sentence and nothing else: "This query is not related to events. Please ask about concerts, festivals, venues, or our demo events."
-3. Output ONLY valid minified JSON on a single line or plain JSON object with this exact shape (no markdown code fences):
-{"eventRelated":true or false,"reply":"your answer string"}
+1. If the user's message is about events, concerts, festivals, venues, tickets, cities, dates, or recommendations — set "eventRelated": true. Use the CATALOG to answer.
+2. If the question is UNRELATED to the catalog (programming, homework, general trivia) — set "eventRelated": false and set "reply" to exactly: "This query is not related to events. Please ask about concerts, festivals, venues, or our demo events."
+3. Output ONLY a valid JSON object.
 
 CATALOG (${catalog.length} events):
 ${catalogJson}
@@ -56,41 +63,40 @@ ${message}`;
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
       model: MODEL,
+      // 'application/json' forces the model to return valid JSON without markdown code fences
       generationConfig: {
         temperature: 0.2,
         maxOutputTokens: 2048,
+        responseMimeType: "application/json",
       },
     });
+
     const result = await model.generateContent(instructions);
-    let text = result.response.text().trim();
-    text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    const text = result.response.text().trim();
 
     let parsed;
     try {
       parsed = JSON.parse(text);
-    } catch {
+    } catch (parseError) {
+      console.error("JSON Parse Error:", text);
       return res.status(502).json({
         error: "Could not parse AI response",
         eventRelated: false,
-        reply:
-          "The assistant returned an unexpected format. Please try again with a shorter question about events.",
+        reply: "The assistant returned an unexpected format. Please try again with a shorter question.",
       });
     }
 
     const eventRelated = Boolean(parsed.eventRelated);
-    const reply =
-      typeof parsed.reply === "string"
-        ? parsed.reply
-        : "This query is not related to events. Please ask about concerts, festivals, venues, or our demo events.";
+    const notRelatedMsg = "This query is not related to events. Please ask about concerts, festivals, venues, or our demo events.";
+    
+    // Final safety check on the reply content
+    const reply = eventRelated ? (parsed.reply || notRelatedMsg) : notRelatedMsg;
 
-    const notRelatedMsg =
-      "This query is not related to events. Please ask about concerts, festivals, venues, or our demo events.";
+    return res.json({ 
+      eventRelated, 
+      reply 
+    });
 
-    if (!eventRelated) {
-      return res.json({ eventRelated: false, reply: notRelatedMsg });
-    }
-
-    return res.json({ eventRelated: true, reply });
   } catch (e) {
     console.error("Gemini error:", e);
     const status = e?.status === 400 || e?.status === 403 ? e.status : 500;

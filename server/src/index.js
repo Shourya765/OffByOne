@@ -51,7 +51,7 @@ async function main() {
   server.on("error", (err) => {
     if (err.code === "EADDRINUSE") {
       console.error(
-        `\nPort ${PORT} is already in use. Fix one of:\n  • Set PORT=5051 in server/.env and the same URL in client/vite.config.js proxy target\n  • Or stop the other process: lsof -i :${PORT}\n`
+        `\nPort ${PORT} is already in use. Fix one of:\n  • Set PORT=5051 in server/.env and the same URL in client/vite.config.js proxy target\n  • Or stop the other process: netstat -ano | findstr :${PORT} (note the PID, then taskkill /PID <PID> /F)\n`
       );
       process.exit(1);
     }
