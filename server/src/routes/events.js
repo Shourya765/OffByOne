@@ -79,6 +79,61 @@ router.get("/directions", async (req, res) => {
   }
 });
 
+/**
+ * Approximate map point for a country / city from the event catalog (sample + organizer).
+ * Keeps lat/lng available for driving directions without browser GPS.
+ */
+router.get("/region-center", async (req, res) => {
+  const country = (req.query.country || "US").toString().toUpperCase().slice(0, 2);
+  const cityRaw = (req.query.city || "").trim();
+  const cityLower = cityRaw.toLowerCase();
+
+  let list;
+  try {
+    list = await getCatalogEventsWithDates();
+  } catch {
+    list = getSampleEventsWithDates();
+  }
+
+  let matches = list.filter((e) => e.countryCode === country && e.lat != null && e.lng != null);
+  if (cityLower) {
+    matches = matches.filter((e) => {
+      const ec = (e.city || "").toLowerCase();
+      return ec.includes(cityLower) || (ec.length > 0 && cityLower.includes(ec));
+    });
+  }
+  if (!matches.length) {
+    matches = list.filter((e) => e.countryCode === country && e.lat != null && e.lng != null);
+  }
+  if (!matches.length) {
+    matches = list.filter((e) => e.lat != null && e.lng != null);
+  }
+  if (!matches.length) {
+    return res.json({
+      lat: 37.7749,
+      lng: -122.4194,
+      label: "Default",
+      fallback: true,
+    });
+  }
+
+  let lat = 0;
+  let lng = 0;
+  for (const e of matches) {
+    lat += e.lat;
+    lng += e.lng;
+  }
+  lat /= matches.length;
+  lng /= matches.length;
+
+  res.json({
+    lat,
+    lng,
+    label: cityRaw ? `${cityRaw}, ${country}` : `${country}`,
+    fallback: false,
+  });
+});
+
 router.get("/search", optionalAuth, async (req, res) => {
   const lat = req.query.lat != null ? parseFloat(req.query.lat) : undefined;
   const lng = req.query.lng != null ? parseFloat(req.query.lng) : undefined;

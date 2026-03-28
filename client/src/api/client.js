@@ -36,6 +36,10 @@ export const api = {
     });
     return request(`/events/directions?${q}`);
   },
+  regionCenter: (country, city) =>
+    request(
+      `/events/region-center?country=${encodeURIComponent(country)}&city=${encodeURIComponent(city || "")}`
+    ),
   searchEvents: (params) => {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {

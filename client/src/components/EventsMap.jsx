@@ -176,8 +176,8 @@ export function EventsMap({ events, center, userLocation }) {
         <div className="pointer-events-auto flex max-w-full flex-col gap-2 rounded-2xl border border-slate-200/90 bg-white/95 p-2 shadow-lg backdrop-blur-sm dark:border-slate-600 dark:bg-slate-900/95 sm:max-w-xs">
           {!hasFrom && (
             <p className="px-2 py-1 text-xs text-slate-600 dark:text-slate-400">
-              Use <strong>My location</strong> or <strong>Use IP</strong> to set coordinates, then select an event on
-              the map.
+              No map coordinates yet — the app usually loads them from the server (IP). You can also use My location
+              (GPS) in the header, then pick an event.
             </p>
           )}
           {hasFrom && !selectedEvent && (

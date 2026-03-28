@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate, Link } from "react-router-dom";
 import { api } from "../api/client.js";
@@ -20,7 +20,14 @@ const COUNTRIES = [
 export function HomePage() {
   const navigate = useNavigate();
   const { user, setInterests } = useAuth();
-  const [loc, setLoc] = useState({ lat: 37.7749, lng: -122.4194, label: "San Francisco", source: "default" });
+  const [loc, setLoc] = useState({
+    lat: 37.7749,
+    lng: -122.4194,
+    label: "San Francisco",
+    source: "default",
+  });
+  /** Skip IP bootstrap if the user already picked country, GPS, or IP manually. */
+  const userTouchedLocationRef = useRef(false);
   /** Empty string = all cities in selected country */
   const [city, setCity] = useState("");
   const [country, setCountry] = useState("US");
@@ -79,6 +86,60 @@ export function HomePage() {
     fetchEvents();
   }, [fetchEvents]);
 
+  /** Server IP geolocation only — no browser geolocation permission. */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api.geolocate();
+        if (cancelled || userTouchedLocationRef.current) return;
+        setLoc({
+          lat: data.lat,
+          lng: data.lng,
+          label: data.label || data.city || "Near you",
+          source: "ip",
+          gpsCity: undefined,
+          gpsCountry: undefined,
+          gpsDistanceKm: undefined,
+        });
+        if (data.countryCode) setCountry(data.countryCode);
+        if (data.city) setCity(data.city);
+        setLocStatus(
+          "Approximate area from your connection (server IP lookup — the browser does not ask for GPS). Use “My location” only when you want precise GPS."
+        );
+      } catch {
+        if (!cancelled && !userTouchedLocationRef.current) {
+          setLocStatus('Using default map area. Try “Use IP location” or “My location (GPS)”.');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const applyRegionFromSelectors = useCallback(async (nextCountry, nextCity) => {
+    try {
+      const hint = await api.regionCenter(nextCountry, nextCity || "");
+      setLoc({
+        lat: hint.lat,
+        lng: hint.lng,
+        label: nextCity ? `${nextCity}, ${nextCountry}` : `All cities · ${nextCountry}`,
+        source: "manual",
+        gpsCity: undefined,
+        gpsCountry: undefined,
+        gpsDistanceKm: undefined,
+      });
+      setLocStatus(
+        nextCity
+          ? `Map pin set to ${nextCity} (catalog center) — road routes use this point.`
+          : `Map pin set to ${nextCountry} (catalog average) — road routes use this point.`
+      );
+    } catch {
+      setLocStatus("Could not resolve a map point for this region — try another country.");
+    }
+  }, []);
+
   useEffect(() => {
     api
       .trending(loc.lat, loc.lng)
@@ -98,6 +159,7 @@ export function HomePage() {
   }, [user, loc.lat, loc.lng, user?.interests]);
 
   const useGps = () => {
+    userTouchedLocationRef.current = true;
     setLocStatus("Locating…");
     if (!navigator.geolocation) {
       setLocStatus("GPS not available");
@@ -151,6 +213,7 @@ export function HomePage() {
   };
 
   const useIp = async () => {
+    userTouchedLocationRef.current = true;
     setLocStatus("Looking up IP…");
     try {
       const data = await api.geolocate();
@@ -172,16 +235,8 @@ export function HomePage() {
   };
 
   const applyManualRegion = () => {
-    setLoc({
-      lat: null,
-      lng: null,
-      label: city ? `${city}, ${country}` : `All cities · ${country}`,
-      source: "manual",
-      gpsCity: undefined,
-      gpsCountry: undefined,
-      gpsDistanceKm: undefined,
-    });
-    setLocStatus("Searching by city / country");
+    userTouchedLocationRef.current = true;
+    void applyRegionFromSelectors(country, city);
   };
 
   useEffect(() => {
@@ -272,13 +327,16 @@ export function HomePage() {
         <p className="mt-2 max-w-2xl text-slate-600 dark:text-slate-400">
           Search near you or explore a country. Filter by interests, date, distance, and price — list or map.
         </p>
-        <div className="mt-6 flex flex-wrap gap-2">
+        <p className="mt-4 max-w-2xl text-xs text-slate-500 dark:text-slate-400">
+          The site does not request GPS on load. We guess your area from the server (IP) first so map routes always have a starting point; the browser permission prompt appears only if you tap “My location”.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
           <button
             type="button"
             onClick={useGps}
             className="rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-brand-700"
           >
-            Use my location (GPS)
+            My location (GPS)
           </button>
           <button
             type="button"
@@ -323,19 +381,11 @@ export function HomePage() {
                 <select
                   value={country}
                   onChange={(e) => {
+                    userTouchedLocationRef.current = true;
                     const next = e.target.value;
                     setCountry(next);
                     setCity("");
-                    setLoc((prev) => ({
-                      ...prev,
-                      lat: null,
-                      lng: null,
-                      source: "manual",
-                      label: `All cities · ${next}`,
-                      gpsCity: undefined,
-                      gpsCountry: undefined,
-                      gpsDistanceKm: undefined,
-                    }));
+                    void applyRegionFromSelectors(next, "");
                   }}
                   className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                 >
@@ -351,22 +401,10 @@ export function HomePage() {
                 <select
                   value={city}
                   onChange={(e) => {
+                    userTouchedLocationRef.current = true;
                     const v = e.target.value;
                     setCity(v);
-                    setLoc((prev) => ({
-                      ...prev,
-                      gpsCity: undefined,
-                      gpsCountry: undefined,
-                      gpsDistanceKm: undefined,
-                      ...(prev.source === "gps"
-                        ? {
-                            lat: null,
-                            lng: null,
-                            source: "manual",
-                            label: v ? `${v}, ${country}` : `All cities · ${country}`,
-                          }
-                        : {}),
-                    }));
+                    void applyRegionFromSelectors(country, v);
                   }}
                   className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                 >
