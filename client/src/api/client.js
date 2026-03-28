@@ -1,4 +1,6 @@
-const API = "/api";
+// This dynamic check handles both Local and Production environments
+const API_BASE = import.meta.env.VITE_API_URL || "";
+const API = `${API_BASE}/api`;
 
 export function getToken() {
   return localStorage.getItem("ef_token");
@@ -8,14 +10,19 @@ async function request(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...options.headers };
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
+  
   let res;
   try {
+    // Uses the dynamic API path defined above
     res = await fetch(`${API}${path}`, { ...options, headers });
-  } catch {
-    throw new Error(
-      "Cannot reach API — start the server (npm run dev in server/) and ensure its PORT matches client/vite.config.js proxy (default 5050)."
-    );
+  } catch (err) {
+    // Provides helpful error messages based on environment
+    const errorMsg = import.meta.env.DEV 
+      ? "Cannot reach API — ensure server is running on PORT 5050 and check vite.config.js proxy."
+      : "Network error: Unable to connect to the server. Please try again later.";
+    throw new Error(errorMsg);
   }
+
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
