@@ -69,4 +69,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ eventIds }),
     }),
+  assistantChat: (message) =>
+    request("/assistant/chat", { method: "POST", body: JSON.stringify({ message }) }),
 };

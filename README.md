@@ -35,6 +35,7 @@ Without a Ticketmaster API key, the API serves **rich sample events** (San Franc
    JWT_SECRET=your-long-random-secret
    TICKETMASTER_API_KEY=   # optional when using sample data
    USE_SAMPLE_EVENTS=true  # set false + add key to use Ticketmaster
+   GEMINI_API_KEY=         # optional — AI assistant on `/assistant` (Google AI Studio)
    CLIENT_ORIGIN=http://localhost:5173
    ```
 
@@ -89,6 +90,7 @@ Serve `client/dist` with any static host and point API `CLIENT_ORIGIN` to that o
 | GET | `/api/auth/me` | Current user |
 | PATCH | `/api/user/interests` | Update interests |
 | GET/POST/DELETE | `/api/user/favorites`, `/api/user/favorites/:eventId` | Favorites |
+| POST | `/api/assistant/chat` | Body: `{ "message": "..." }` — Gemini answers from sample catalog; unrelated queries get a fixed message. Requires `GEMINI_API_KEY`. |
 
 ## Tech choices
 

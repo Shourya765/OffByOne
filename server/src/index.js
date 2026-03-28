@@ -7,6 +7,7 @@ import { connectDb } from "./config/db.js";
 import authRoutes from "./routes/auth.js";
 import eventsRoutes from "./routes/events.js";
 import userRoutes from "./routes/user.js";
+import assistantRoutes from "./routes/assistant.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
@@ -28,6 +29,7 @@ app.get("/api/health", (_, res) => res.json({ ok: true }));
 app.use("/api/auth", authRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/events", eventsRoutes);
+app.use("/api/assistant", assistantRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error(err);

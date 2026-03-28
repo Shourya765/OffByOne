@@ -25,6 +25,9 @@ export function Layout({ children }) {
             <NavLink to="/" className={navClass} end>
               Discover
             </NavLink>
+            <NavLink to="/assistant" className={navClass}>
+              AI assistant
+            </NavLink>
             {user && (
               <NavLink to="/favorites" className={navClass}>
                 Favorites
@@ -55,16 +58,19 @@ export function Layout({ children }) {
             )}
           </div>
         </div>
-        <div className="flex border-t border-slate-100 px-4 py-2 sm:hidden dark:border-slate-800">
-          <NavLink to="/" className={({ isActive }) => `${navClass({ isActive })} flex-1 text-center`} end>
+        <div className="flex flex-wrap border-t border-slate-100 px-2 py-2 sm:hidden dark:border-slate-800">
+          <NavLink to="/" className={({ isActive }) => `${navClass({ isActive })} min-w-[22%] flex-1 text-center`} end>
             Home
           </NavLink>
+          <NavLink to="/assistant" className={({ isActive }) => `${navClass({ isActive })} min-w-[22%] flex-1 text-center`}>
+            AI
+          </NavLink>
           {user && (
-            <NavLink to="/favorites" className={({ isActive }) => `${navClass({ isActive })} flex-1 text-center`}>
+            <NavLink to="/favorites" className={({ isActive }) => `${navClass({ isActive })} min-w-[22%] flex-1 text-center`}>
               Saved
             </NavLink>
           )}
-          <NavLink to="/auth" className={({ isActive }) => `${navClass({ isActive })} flex-1 text-center`}>
+          <NavLink to="/auth" className={({ isActive }) => `${navClass({ isActive })} min-w-[22%] flex-1 text-center`}>
             {user ? "Account" : "Sign in"}
           </NavLink>
         </div>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { api } from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { EventCard } from "../components/EventCard.jsx";
@@ -294,6 +294,12 @@ export function HomePage() {
           >
             Surprise me
           </button>
+          <Link
+            to="/assistant"
+            className="inline-flex items-center rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:opacity-95"
+          >
+            AI assistant
+          </Link>
           {user && (
             <button
               type="button"
