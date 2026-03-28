@@ -5,7 +5,11 @@ import { ipToLocation } from "../services/ipGeolocation.js";
 import { optionalAuth, authRequired } from "../middleware/auth.js";
 import { EventStat } from "../models/EventStat.js";
 import { User } from "../models/User.js";
-import { getSampleEventsWithDates } from "../data/sampleEvents.js";
+import {
+  getSampleEventsWithDates,
+  getCitiesForCountry,
+  getNearestCatalogCity,
+} from "../data/sampleEvents.js";
 
 const router = Router();
 
@@ -21,12 +25,30 @@ router.get("/geolocate", async (req, res) => {
   res.json(loc);
 });
 
+router.get("/cities", (req, res) => {
+  const country = (req.query.country || "").toString().toUpperCase().slice(0, 2);
+  if (!country) return res.json({ cities: [], country: "" });
+  const cities = getCitiesForCountry(country);
+  res.json({ cities, country });
+});
+
+router.get("/nearest-city", (req, res) => {
+  const lat = req.query.lat != null ? parseFloat(req.query.lat) : NaN;
+  const lng = req.query.lng != null ? parseFloat(req.query.lng) : NaN;
+  if (Number.isNaN(lat) || Number.isNaN(lng)) {
+    return res.status(400).json({ error: "lat and lng required" });
+  }
+  const nearest = getNearestCatalogCity(lat, lng);
+  if (!nearest) return res.json({ nearest: null });
+  res.json({ nearest });
+});
+
 router.get("/search", optionalAuth, async (req, res) => {
   const lat = req.query.lat != null ? parseFloat(req.query.lat) : undefined;
   const lng = req.query.lng != null ? parseFloat(req.query.lng) : undefined;
   const radiusKm = req.query.radiusKm != null ? parseFloat(req.query.radiusKm) : 50;
   const keyword = req.query.q || "";
-  const city = req.query.city || "";
+  const city = (req.query.city || "").trim();
   const countryCode = (req.query.country || "US").toString().toUpperCase().slice(0, 2);
   const datePreset = req.query.date || "";
   const priceFilter = req.query.price || "";
@@ -37,16 +59,19 @@ router.get("/search", optionalAuth, async (req, res) => {
         .filter(Boolean)
     : [];
 
+  /** City + country narrow results; skip lat/lng so filters stay city-scoped (e.g. GPS nearest city). */
+  const hasCityFilter = city.length > 0;
+
   const { events, source } = await searchEvents({
-    lat,
-    lng,
+    lat: hasCityFilter ? undefined : lat,
+    lng: hasCityFilter ? undefined : lng,
     radiusKm,
     keyword,
     categories,
     datePreset,
     priceFilter,
-    city,
-    countryCode: lat != null && lng != null ? undefined : countryCode,
+    city: hasCityFilter ? city : lat != null && lng != null ? "" : city,
+    countryCode: hasCityFilter ? countryCode : lat != null && lng != null ? undefined : countryCode,
   });
 
   let scored = events;

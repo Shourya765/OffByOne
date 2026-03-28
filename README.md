@@ -30,7 +30,7 @@ Without a Ticketmaster API key, the API serves **rich sample events** (San Franc
 2. **Server env** — copy `server/.env.example` to `server/.env` and adjust:
 
    ```env
-   PORT=5000
+   PORT=5050
    MONGODB_URI=mongodb://127.0.0.1:27017/event-finder
    JWT_SECRET=your-long-random-secret
    TICKETMASTER_API_KEY=   # optional when using sample data
@@ -62,7 +62,9 @@ npm run dev
 ```
 
 - App: [http://localhost:5173](http://localhost:5173)  
-- API: [http://localhost:5000/api/health](http://localhost:5000/api/health)
+- API: [http://localhost:5050/api/health](http://localhost:5050/api/health) — **use the same port** in `server/.env` (`PORT=`) and `client/vite.config.js` (`proxy./api.target`). Default is **5050** because macOS often reserves **5000** (AirPlay).
+
+If you change the API port, update both files or the UI will show a connection error and no events.
 
 ## Production build
 
@@ -77,6 +79,8 @@ Serve `client/dist` with any static host and point API `CLIENT_ORIGIN` to that o
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/events/geolocate` | Approximate location from IP |
+| GET | `/api/events/cities` | `country` (ISO2) — distinct cities with sample events (e.g. India lists 60+ cities) |
+| GET | `/api/events/nearest-city` | `lat`, `lng` — nearest demo city (for GPS → city-only results) |
 | GET | `/api/events/search` | Query: `lat`, `lng`, `radiusKm`, `q`, `date`, `price`, `categories`, `city`, `country` |
 | GET | `/api/events/trending` | Trending / popular events for a region |
 | GET | `/api/events/recommendations` | Auth required — personalized list |

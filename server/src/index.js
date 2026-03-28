@@ -1,4 +1,6 @@
-import "dotenv/config";
+import path from "path";
+import { fileURLToPath } from "url";
+import dotenv from "dotenv";
 import express from "express";
 import cors from "cors";
 import { connectDb } from "./config/db.js";
@@ -6,8 +8,12 @@ import authRoutes from "./routes/auth.js";
 import eventsRoutes from "./routes/events.js";
 import userRoutes from "./routes/user.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
+
 const app = express();
-const PORT = process.env.PORT || 5000;
+/** Default 5050 — macOS often uses 5000 for AirPlay, which breaks local APIs */
+const PORT = Number(process.env.PORT) || 5050;
 
 app.use(
   cors({
@@ -34,7 +40,19 @@ async function main() {
   } catch (e) {
     console.warn("MongoDB connection failed — running with limited features:", e.message);
   }
-  app.listen(PORT, () => console.log(`API http://localhost:${PORT}`));
+  const server = app.listen(PORT);
+  server.once("listening", () => {
+    console.log(`API http://localhost:${PORT}`);
+  });
+  server.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(
+        `\nPort ${PORT} is already in use. Fix one of:\n  • Set PORT=5051 in server/.env and the same URL in client/vite.config.js proxy target\n  • Or stop the other process: lsof -i :${PORT}\n`
+      );
+      process.exit(1);
+    }
+    throw err;
+  });
 }
 
 main();

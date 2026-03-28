@@ -69,7 +69,22 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
-function filterSampleEvents({ lat, lng, radiusKm, keyword, categories, datePreset, priceFilter, city, countryCode }) {
+/**
+ * Sample catalog is worldwide. skipRadiusFilter=true (default) keeps all cities visible with distance sorted;
+ * radius only applies when false (e.g. strict demo).
+ */
+function filterSampleEvents({
+  lat,
+  lng,
+  radiusKm,
+  keyword,
+  categories,
+  datePreset,
+  priceFilter,
+  city,
+  countryCode,
+  skipRadiusFilter = true,
+}) {
   let list = getSampleEventsWithDates();
   if (city) {
     const c = city.toLowerCase();
@@ -96,8 +111,7 @@ function filterSampleEvents({ lat, lng, radiusKm, keyword, categories, datePrese
 
   const now = new Date();
   if (datePreset === "today") {
-    const end = new Date(now);
-    end.setHours(23, 59, 59, 999);
+    const end = new Date(now.getTime() + 24 * 60 * 60 * 1000);
     list = list.filter((ev) => {
       const d = new Date(ev.startDate);
       return d >= now && d <= end;
@@ -119,12 +133,19 @@ function filterSampleEvents({ lat, lng, radiusKm, keyword, categories, datePrese
   }
 
   if (lat != null && lng != null && radiusKm) {
-    list = list
-      .map((ev) => {
-        if (ev.lat == null || ev.lng == null) return { ...ev, distanceKm: null };
-        return { ...ev, distanceKm: haversineKm(lat, lng, ev.lat, ev.lng) };
-      })
-      .filter((ev) => ev.distanceKm == null || ev.distanceKm <= radiusKm);
+    list = list.map((ev) => {
+      if (ev.lat == null || ev.lng == null) return { ...ev, distanceKm: null };
+      return { ...ev, distanceKm: haversineKm(lat, lng, ev.lat, ev.lng) };
+    });
+    if (skipRadiusFilter) {
+      list.sort((a, b) => {
+        if (a.distanceKm == null) return 1;
+        if (b.distanceKm == null) return -1;
+        return a.distanceKm - b.distanceKm;
+      });
+    } else {
+      list = list.filter((ev) => ev.distanceKm == null || ev.distanceKm <= radiusKm);
+    }
   } else {
     list = list.map((ev) => ({ ...ev, distanceKm: null }));
   }

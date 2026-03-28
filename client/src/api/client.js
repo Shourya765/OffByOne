@@ -8,7 +8,14 @@ async function request(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...options.headers };
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${API}${path}`, { ...options, headers });
+  let res;
+  try {
+    res = await fetch(`${API}${path}`, { ...options, headers });
+  } catch {
+    throw new Error(
+      "Cannot reach API — start the server (npm run dev in server/) and ensure its PORT matches client/vite.config.js proxy (default 5050)."
+    );
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
@@ -16,6 +23,10 @@ async function request(path, options = {}) {
 
 export const api = {
   geolocate: () => request("/events/geolocate"),
+  citiesForCountry: (country) =>
+    request(`/events/cities?country=${encodeURIComponent(country)}`),
+  nearestCity: (lat, lng) =>
+    request(`/events/nearest-city?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`),
   searchEvents: (params) => {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {

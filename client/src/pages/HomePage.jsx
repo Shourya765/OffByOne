@@ -9,6 +9,7 @@ import { INTERESTS } from "../lib/utils.js";
 
 const COUNTRIES = [
   { code: "US", name: "United States" },
+  { code: "IN", name: "India" },
   { code: "GB", name: "United Kingdom" },
   { code: "CA", name: "Canada" },
   { code: "AU", name: "Australia" },
@@ -20,8 +21,10 @@ export function HomePage() {
   const navigate = useNavigate();
   const { user, setInterests } = useAuth();
   const [loc, setLoc] = useState({ lat: 37.7749, lng: -122.4194, label: "San Francisco", source: "default" });
-  const [city, setCity] = useState("San Francisco");
+  /** Empty string = all cities in selected country */
+  const [city, setCity] = useState("");
   const [country, setCountry] = useState("US");
+  const [availableCities, setAvailableCities] = useState([]);
   const [radiusKm, setRadiusKm] = useState(50);
   const [keyword, setKeyword] = useState("");
   const [datePreset, setDatePreset] = useState("");
@@ -35,6 +38,7 @@ export function HomePage() {
   const [source, setSource] = useState("");
   const [locStatus, setLocStatus] = useState("");
   const [notifEnabled, setNotifEnabled] = useState(false);
+  const [apiError, setApiError] = useState("");
 
   const toggleCategory = (c) => {
     setSelectedCategories((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
@@ -43,22 +47,29 @@ export function HomePage() {
   const fetchEvents = useCallback(async () => {
     setLoading(true);
     try {
+      const gpsCityMode = loc.source === "gps" && Boolean(loc.gpsCity);
       const { events: list, source: src } = await api.searchEvents({
-        lat: loc.lat,
-        lng: loc.lng,
+        lat: gpsCityMode ? undefined : loc.lat,
+        lng: gpsCityMode ? undefined : loc.lng,
         radiusKm,
         q: keyword,
         date: datePreset,
         price: priceFilter,
         categories: selectedCategories.length ? selectedCategories.join(",") : undefined,
-        country: loc.lat && loc.lng ? undefined : country,
-        city: loc.lat && loc.lng ? undefined : city || undefined,
+        country: gpsCityMode
+          ? loc.gpsCountry
+          : loc.lat != null && loc.lng != null && !gpsCityMode
+            ? undefined
+            : country,
+        city: gpsCityMode ? loc.gpsCity : loc.lat != null && loc.lng != null && !gpsCityMode ? undefined : city || undefined,
       });
-      setEvents(list);
-      setSource(src);
+      setEvents(list || []);
+      setSource(src || "");
+      setApiError("");
     } catch (e) {
       console.error(e);
       setEvents([]);
+      setApiError(e.message || "Failed to load events");
     } finally {
       setLoading(false);
     }
@@ -93,14 +104,44 @@ export function HomePage() {
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLoc({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          label: "Your location",
-          source: "gps",
-        });
-        setLocStatus("Using device location");
+      async (pos) => {
+        const la = pos.coords.latitude;
+        const lo = pos.coords.longitude;
+        try {
+          const { nearest } = await api.nearestCity(la, lo);
+          if (!nearest) {
+            setLoc({
+              lat: la,
+              lng: lo,
+              label: "Your location",
+              source: "gps",
+            });
+            setLocStatus("No matching demo city — widen country or use manual search.");
+            return;
+          }
+          setCountry(nearest.countryCode);
+          setCity(nearest.city);
+          setLoc({
+            lat: la,
+            lng: lo,
+            label: nearest.city,
+            source: "gps",
+            gpsCity: nearest.city,
+            gpsCountry: nearest.countryCode,
+            gpsDistanceKm: nearest.distanceKm,
+          });
+          setLocStatus(
+            `Showing events in ${nearest.city} only (nearest city in demo data, ~${nearest.distanceKm} km to city center).`
+          );
+        } catch {
+          setLoc({
+            lat: la,
+            lng: lo,
+            label: "Your location",
+            source: "gps",
+          });
+          setLocStatus("Could not resolve nearest city — try again.");
+        }
       },
       () => {
         setLocStatus("GPS denied — try IP or manual");
@@ -118,6 +159,9 @@ export function HomePage() {
         lng: data.lng,
         label: data.label || data.city,
         source: "ip",
+        gpsCity: undefined,
+        gpsCountry: undefined,
+        gpsDistanceKm: undefined,
       });
       if (data.city) setCity(data.city);
       if (data.countryCode) setCountry(data.countryCode);
@@ -131,11 +175,29 @@ export function HomePage() {
     setLoc({
       lat: null,
       lng: null,
-      label: `${city || "Region"}, ${country}`,
+      label: city ? `${city}, ${country}` : `All cities · ${country}`,
       source: "manual",
+      gpsCity: undefined,
+      gpsCountry: undefined,
+      gpsDistanceKm: undefined,
     });
     setLocStatus("Searching by city / country");
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .citiesForCountry(country)
+      .then(({ cities }) => {
+        if (!cancelled) setAvailableCities(cities || []);
+      })
+      .catch(() => {
+        if (!cancelled) setAvailableCities([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [country]);
 
   const surprise = () => {
     if (!events.length) return;
@@ -191,6 +253,14 @@ export function HomePage() {
 
   return (
     <div className="space-y-10">
+      {apiError && (
+        <div
+          role="alert"
+          className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
+        >
+          <strong className="font-semibold">Connection issue.</strong> {apiError}
+        </div>
+      )}
       <motion.section
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -243,19 +313,24 @@ export function HomePage() {
             <h2 className="font-display text-lg font-semibold text-slate-900 dark:text-white">Location & radius</h2>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                City
-                <input
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                  placeholder="e.g. Austin"
-                />
-              </label>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
                 Country
                 <select
                   value={country}
-                  onChange={(e) => setCountry(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setCountry(next);
+                    setCity("");
+                    setLoc((prev) => ({
+                      ...prev,
+                      lat: null,
+                      lng: null,
+                      source: "manual",
+                      label: `All cities · ${next}`,
+                      gpsCity: undefined,
+                      gpsCountry: undefined,
+                      gpsDistanceKm: undefined,
+                    }));
+                  }}
                   className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
                 >
                   {COUNTRIES.map((c) => (
@@ -264,6 +339,43 @@ export function HomePage() {
                     </option>
                   ))}
                 </select>
+              </label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                City
+                <select
+                  value={city}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setCity(v);
+                    setLoc((prev) => ({
+                      ...prev,
+                      gpsCity: undefined,
+                      gpsCountry: undefined,
+                      gpsDistanceKm: undefined,
+                      ...(prev.source === "gps"
+                        ? {
+                            lat: null,
+                            lng: null,
+                            source: "manual",
+                            label: v ? `${v}, ${country}` : `All cities · ${country}`,
+                          }
+                        : {}),
+                    }));
+                  }}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                >
+                  <option value="">
+                    All cities with sample events ({availableCities.length} cities)
+                  </option>
+                  {availableCities.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+                  List shows cities that have events in our demo data for this country.
+                </span>
               </label>
             </div>
             <button
@@ -285,8 +397,14 @@ export function HomePage() {
                 step={5}
                 value={radiusKm}
                 onChange={(e) => setRadiusKm(Number(e.target.value))}
-                className="mt-2 w-full accent-brand-600"
+                disabled={loc.source === "gps" && Boolean(loc.gpsCity)}
+                className="mt-2 w-full accent-brand-600 disabled:cursor-not-allowed disabled:opacity-50"
               />
+              {loc.source === "gps" && loc.gpsCity && (
+                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  Radius is disabled while GPS is locked to the nearest demo city ({loc.gpsCity}).
+                </p>
+              )}
             </div>
             <p className="mt-2 text-xs text-slate-500">
               Active: <strong>{loc.label}</strong>
