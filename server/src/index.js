@@ -19,7 +19,9 @@ const PORT = Number(process.env.PORT) || 5050;
 
 app.use(
   cors({
-    origin: ["off-by-one-red.vercel.app" , "http://localhost:5173"] ,
+    origin: ["https://off-by-one-red.vercel.app" , "http://localhost:5173"] ,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   })
 );
