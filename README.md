@@ -33,7 +33,8 @@ Without a Ticketmaster API key, the API serves **rich sample events** (San Franc
    PORT=5000
    MONGODB_URI=mongodb://127.0.0.1:27017/event-finder
    JWT_SECRET=your-long-random-secret
-   TICKETMASTER_API_KEY=   # optional; leave empty for sample data
+   TICKETMASTER_API_KEY=   # optional when using sample data
+   USE_SAMPLE_EVENTS=true  # set false + add key to use Ticketmaster
    CLIENT_ORIGIN=http://localhost:5173
    ```
 

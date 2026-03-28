@@ -3,6 +3,15 @@ import { getSampleEventsWithDates } from "../data/sampleEvents.js";
 
 const TM_BASE = "https://app.ticketmaster.com/discovery/v2";
 
+/** Sample data when forced, or when no Ticketmaster key (even if USE_SAMPLE_EVENTS=false). */
+export function useSampleEvents() {
+  const force = process.env.USE_SAMPLE_EVENTS;
+  const key = process.env.TICKETMASTER_API_KEY?.trim();
+  if (force === "true" || force === "1") return true;
+  if (force === "false" || force === "0") return !key;
+  return !key;
+}
+
 const CATEGORY_MAP = {
   Music: "Music",
   Sports: "Sports",
@@ -136,9 +145,7 @@ export async function searchEvents(params) {
     countryCode,
   } = params;
 
-  const apiKey = process.env.TICKETMASTER_API_KEY;
-
-  if (!apiKey) {
+  if (useSampleEvents()) {
     return {
       events: filterSampleEvents({
         lat,
@@ -154,6 +161,8 @@ export async function searchEvents(params) {
       source: "sample",
     };
   }
+
+  const apiKey = process.env.TICKETMASTER_API_KEY?.trim() || "";
 
   try {
     const search = new URLSearchParams();
@@ -249,11 +258,11 @@ export async function searchEvents(params) {
 }
 
 export async function getEventById(id) {
-  const apiKey = process.env.TICKETMASTER_API_KEY;
-  if (!apiKey || id.startsWith("sample-")) {
+  if (useSampleEvents() || id.startsWith("sample-")) {
     const found = getSampleEventsWithDates().find((e) => e.id === id);
     return found || null;
   }
+  const apiKey = process.env.TICKETMASTER_API_KEY?.trim() || "";
   try {
     const url = `${TM_BASE}/events/${id}.json?apikey=${apiKey}`;
     const res = await fetch(url);
