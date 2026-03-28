@@ -55,20 +55,21 @@ export function HomePage() {
     setLoading(true);
     try {
       const gpsCityMode = loc.source === "gps" && Boolean(loc.gpsCity);
+      const cityTrim = (city || "").trim();
+      const hasPickerCity = cityTrim.length > 0;
+      /** Search by named city+country (no radius) — GPS nearest city or an explicit city from the dropdown. */
+      const cityScoped = gpsCityMode || hasPickerCity;
+
       const { events: list, source: src } = await api.searchEvents({
-        lat: gpsCityMode ? undefined : loc.lat,
-        lng: gpsCityMode ? undefined : loc.lng,
+        lat: cityScoped ? undefined : loc.lat,
+        lng: cityScoped ? undefined : loc.lng,
         radiusKm,
         q: keyword,
         date: datePreset,
         price: priceFilter,
         categories: selectedCategories.length ? selectedCategories.join(",") : undefined,
-        country: gpsCityMode
-          ? loc.gpsCountry
-          : loc.lat != null && loc.lng != null && !gpsCityMode
-            ? undefined
-            : country,
-        city: gpsCityMode ? loc.gpsCity : loc.lat != null && loc.lng != null && !gpsCityMode ? undefined : city || undefined,
+        country: gpsCityMode ? loc.gpsCountry : country,
+        city: gpsCityMode ? loc.gpsCity : hasPickerCity ? cityTrim : undefined,
       });
       setEvents(list || []);
       setSource(src || "");

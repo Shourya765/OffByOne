@@ -161,8 +161,8 @@ router.get("/search", optionalAuth, async (req, res) => {
     categories,
     datePreset,
     priceFilter,
-    city: hasCityFilter ? city : lat != null && lng != null ? "" : city,
-    countryCode: hasCityFilter ? countryCode : lat != null && lng != null ? undefined : countryCode,
+    city: hasCityFilter ? city : "",
+    countryCode,
   });
 
   let scored = events;
