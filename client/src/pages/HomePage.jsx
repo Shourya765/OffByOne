@@ -518,7 +518,15 @@ export function HomePage() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
               >
-                <EventsMap events={events} center={mapCenter} />
+                <EventsMap
+                  events={events}
+                  center={mapCenter}
+                  userLocation={
+                    loc.lat != null && loc.lng != null
+                      ? { lat: loc.lat, lng: loc.lng, label: loc.label || "Your location" }
+                      : null
+                  }
+                />
               </motion.div>
             ) : (
               <motion.div key="list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>

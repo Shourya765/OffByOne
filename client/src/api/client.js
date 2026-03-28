@@ -27,6 +27,15 @@ export const api = {
     request(`/events/cities?country=${encodeURIComponent(country)}`),
   nearestCity: (lat, lng) =>
     request(`/events/nearest-city?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`),
+  directions: (fromLat, fromLng, toLat, toLng) => {
+    const q = new URLSearchParams({
+      fromLat: String(fromLat),
+      fromLng: String(fromLng),
+      toLat: String(toLat),
+      toLng: String(toLng),
+    });
+    return request(`/events/directions?${q}`);
+  },
   searchEvents: (params) => {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {

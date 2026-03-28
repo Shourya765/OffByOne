@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { Router } from "express";
+import fetch from "node-fetch";
 import { searchEvents, getEventById } from "../services/ticketmaster.js";
 import { ipToLocation } from "../services/ipGeolocation.js";
 import { optionalAuth, authRequired } from "../middleware/auth.js";
@@ -42,6 +43,40 @@ router.get("/nearest-city", (req, res) => {
   const nearest = getNearestCatalogCity(lat, lng);
   if (!nearest) return res.json({ nearest: null });
   res.json({ nearest });
+});
+
+/** OSRM public demo — driving directions (road geometry). */
+router.get("/directions", async (req, res) => {
+  const fromLat = req.query.fromLat != null ? parseFloat(req.query.fromLat) : NaN;
+  const fromLng = req.query.fromLng != null ? parseFloat(req.query.fromLng) : NaN;
+  const toLat = req.query.toLat != null ? parseFloat(req.query.toLat) : NaN;
+  const toLng = req.query.toLng != null ? parseFloat(req.query.toLng) : NaN;
+  if ([fromLat, fromLng, toLat, toLng].some((n) => Number.isNaN(n))) {
+    return res.status(400).json({ error: "fromLat, fromLng, toLat, toLng are required" });
+  }
+
+  const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson`;
+
+  try {
+    const r = await fetch(osrmUrl, { headers: { Accept: "application/json" } });
+    if (!r.ok) {
+      return res.status(502).json({ error: "Routing service returned an error" });
+    }
+    const data = await r.json();
+    if (data.code !== "Ok" || !data.routes?.[0]?.geometry?.coordinates?.length) {
+      return res.status(404).json({ error: "No drivable route found between these points" });
+    }
+    const route = data.routes[0];
+    const coordinates = route.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+    res.json({
+      coordinates,
+      distanceM: route.distance,
+      durationS: route.duration,
+    });
+  } catch (e) {
+    console.error("directions proxy", e);
+    res.status(502).json({ error: "Routing service unavailable" });
+  }
 });
 
 router.get("/search", optionalAuth, async (req, res) => {
