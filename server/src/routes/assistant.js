@@ -4,7 +4,7 @@ import { getSampleEventsWithDates } from "../data/sampleEvents.js";
 
 const router = Router();
 
-const MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 function buildCatalogPayload() {
   const events = getSampleEventsWithDates();
@@ -54,14 +54,14 @@ ${message}`;
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: MODEL });
-    const result = await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: instructions }] }],
+    const model = genAI.getGenerativeModel({
+      model: MODEL,
       generationConfig: {
         temperature: 0.2,
         maxOutputTokens: 2048,
       },
     });
+    const result = await model.generateContent(instructions);
     let text = result.response.text().trim();
     text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 
@@ -93,7 +93,8 @@ ${message}`;
     return res.json({ eventRelated: true, reply });
   } catch (e) {
     console.error("Gemini error:", e);
-    return res.status(500).json({
+    const status = e?.status === 400 || e?.status === 403 ? e.status : 500;
+    return res.status(status).json({
       error: e.message || "AI request failed",
       eventRelated: false,
     });
